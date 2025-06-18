@@ -1,0 +1,89 @@
+!pip install pysentimiento
+!pip install accelerate
+!pip install sentencepiece
+from transformers import pipeline
+from typing import Union, List, Tuple
+from pysentimiento import create_analyzer
+
+
+#Detalhamento:
+def count_word(frase):
+  count = 0
+  palavras = frase.split( )
+  for w in palavras:
+    count+=1
+  return(count)
+
+
+#Legibilidade:
+def count_sentences(frases):
+  sentences = sent_tokenize(frases)
+  return(len(sentences))
+
+def complex_words(frases):
+  complex_valido=0
+  tokens = word_tokenize(frases)
+  for token in tokens:
+    if token not in string.punctuation and syllables.estimate(token) >2:
+      complex_valido +=1
+  return(complex_valido)
+
+
+df['countSentences'] = df['Text'].apply(count_sentences)
+df['avgSentenceLength'] = df['numWords']/df['countSentences']
+df['rateComplexWords'] = df['complexWords']/df['numWords']
+df['FOGindex'] = 0.4 *(df['avgSentenceLength'] + df['rateComplexWords'])
+
+# Sentimento:
+analyzer = create_analyzer(task="sentiment", lang="pt")
+
+def sentAnalysis(frases: List[str]) -> List[Tuple[str, float]]:
+   
+    try:
+        resultados = analyzer.predict(frases)
+        analise = [max(s.probas.items(), key=lambda x: x[1]) for s in resultados]
+        return analise
+    except Exception as e:
+        print(f"Erro durante a análise de sentimento: {e}")
+        return []
+
+#Adjetivação
+ner = pipeline("token-classification", model="lisaterumi/postagger-portuguese", aggregation_strategy="simple")
+
+def count_adj(text: Union[str, List[str]]) -> int:
+    try:
+        if isinstance(text, str):
+            text = [text]
+        
+        total_adj = 0
+        for frase in text:
+            tags = ner(frase)
+            total_adj += sum(1 for tag in tags if tag['entity_group'] == 'ADJ')
+        
+        return total_adj
+
+    except Exception as e:
+        print(f"Erro na contagem de adjetivos: {e}")
+        return 0
+
+#Apelo
+classifier = pipeline(
+    task="zero-shot-classification",
+    model="MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7"
+)
+
+def ZSC(frases: Union[str, List[str]]) -> Union[str, List[str]]:
+    try:
+        if isinstance(frases, str):
+            output = classifier(frases, candidate_labels=["emotional review appeal", "functional review appeal"])
+            return output["labels"][0]
+        else:
+            resultados = []
+            for frase in frases:
+                output = classifier(frase, candidate_labels=["emotional review appeal", "functional review appeal"])
+                resultados.append(output["labels"][0])
+            return resultados
+    except Exception as e:
+        print(f"Erro na classificação zero-shot: {e}")
+        return [] if isinstance(frases, list) else ""
+
